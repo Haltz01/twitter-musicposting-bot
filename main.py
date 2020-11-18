@@ -9,22 +9,9 @@ import random
 
 # logger = logging.getLogger()
 
-# https://realpython.com/twitter-bot-python-tweepy/
-# http://docs.tweepy.org/en/latest/getting_started.html
+rootUrlAPI = "https://api.musixmatch.com/ws/1.1/"
 
-# https://spinditty.com/genres/100-Best-Metalcore-Bands
-
-# import PyV8
-# ctx = PyV8.JSContext()
-# ctx.enter()
-
-# js = """
-# <script type="text/javascript" src="http://tracking.musixmatch.com/t1.0/AMa6hJCIEzn1v8RuOP">
-# """
-
-# print ctx.eval(js.replace("document.write", "return "))
-
-def getRandomArtist(): # gets random artist from artists_list.txt file and returns artist ID in the API
+def getRandomArtist(): # gets random artist from artists_list.txt file and returns artist ID in the API + name of the selected artist
     print("\n======= getRandomArtist() =======")
     
     artists_list = open('artists_list.txt', 'r') 
@@ -37,7 +24,6 @@ def getRandomArtist(): # gets random artist from artists_list.txt file and retur
     if (selectedArtist[-1] == '\n'): # removing '\n' if there's one in string
         selectedArtist = selectedArtist[:-1]
 
-
     artistSearchURL = "artist.search?page_size=1&q_artist=" + selectedArtist + "&apikey=" + MUSIXMATCH_API_KEY
 
     print("[*] Getting " + selectedArtist + " ID...")
@@ -45,16 +31,16 @@ def getRandomArtist(): # gets random artist from artists_list.txt file and retur
 
     if (response.status_code != 200):
         print("[!] Something went wrong! Status code = " + response.status_code)
-        return -1
+        return (-1, "")
         
     response = response.json()
 
-    print("[*] JSON response:", response["message"]["body"]["artist_list"][0])
+    print("[*] JSON response:", response["message"]["body"]["artist_list"])
 
     artistID = response["message"]["body"]["artist_list"][0]["artist"]["artist_id"]
     print("[*] OK - Artist ID = ", artistID)
 
-    return artistID
+    return (artistID, selectedArtist)
 
 def getRandomAlbum(artistID): # gets a random album from the selected artist and returns the album ID
     print("\n======= getRandomAlbum() =======")
@@ -111,6 +97,7 @@ def getLyrics(trackID): # gets the lirycs of a song
     print("\n======= getLyrics() =======")
 
     trackLyricsURL = "track.lyrics.get?track_id=" + str(trackID) + "&apikey=" + MUSIXMATCH_API_KEY
+    # trackLyricsURL = "track.lyrics.get?track_id=203501441&apikey=d267823ae65499177e3c4e805c2fbab7"
 
     response = requests.get(rootUrlAPI + trackLyricsURL)
 
@@ -118,7 +105,30 @@ def getLyrics(trackID): # gets the lirycs of a song
         print("[!] Something went wrong! Status code = " + response.status_code)
         return -1
 
-    print(response.json())
+    response = response.json()
+
+    lyricsSnippet = response["message"]["body"]["lyrics"]["lyrics_body"]
+
+    separator = "\n\n*******"
+    lyricsSnippet = lyricsSnippet.split(separator, 1)[0]
+
+    print("[*] OK - lyrics snippet:\n" + lyricsSnippet)
+    
+    return lyricsSnippet
+
+def prepareTweetMessage(lyrics, trackName, artistName):
+    print("\n======= prepareTweetMessage() ======= ")
+    if (len(lyrics) <= 240):
+        return (lyrics + "\n\n[ " + trackName + ", " + artistName + " ]")
+    
+    lyrics = lyrics[:200]
+
+    lastCharIndex = len(lyrics) - 1 - lyrics[::-1].index('\n')
+
+    lyrics = lyrics[:lastCharIndex] + "\n(...)"
+
+    return (lyrics + "\n\n[ " + trackName + ", " + artistName + " ]")
+
 
 # Getting environment variables
 load_dotenv(verbose=True)
@@ -129,7 +139,7 @@ ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 ACCESS_TOKEN_SECRET = os.getenv("ACCESS_TOKEN_SECRET")
 MUSIXMATCH_API_KEY = os.getenv("MUSIXMATCH_API_KEY")
 
-print("== .ENV VARIABLES ==")
+print("=== ENV. VARIABLES ===")
 print("API_KEY:", API_KEY)
 print("API_SECRET_KEY: ", API_SECRET_KEY)
 print("BEARER_TOKEN: ", BEARER_TOKEN)
@@ -138,29 +148,29 @@ print("ACCESS_TOKEN_SECRET: ", ACCESS_TOKEN_SECRET)
 print("MUSIXMATCH_API_KEY: ", MUSIXMATCH_API_KEY)
 
 # Authenticating to Twitter
-# print("[*] Authenticating to Twitter...")
-# auth = tweepy.OAuthHandler(API_KEY, API_SECRET_KEY) 
-# auth.set_access_token(ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
+print("[*] Authenticating to Twitter...")
+auth = tweepy.OAuthHandler(API_KEY, API_SECRET_KEY) 
+auth.set_access_token(ACCESS_TOKEN, ACCESS_TOKEN_SECRET)
 
 # Creating API object
-# api = tweepy.API(auth, wait_on_rate_limit=True, wait_on_rate_limit_notify=True) # when rate limit is exceed, it notifies and waits
+api = tweepy.API(auth, wait_on_rate_limit=True, wait_on_rate_limit_notify=True) # when rate limit is exceed, it notifies and waits
 
 # Verifying credentials
-# try:
-#     api.verify_credentials()
-#     print("[*] Authentication OK")
-# except:
-#     print("[!] Error during authentication")
+try:
+    api.verify_credentials()
+    print("[*] Authentication OK")
+except:
+    print("[!] Error during authentication")
+    exit(2)
 
 # Testing song APIs
 # https://www.last.fm/api/show/track.search
 # https://api.vagalume.com.br/
 # https://github.com/canarado/node-lyrics
 
-# https://developer.musixmatch.com/ -> I'll probably use this one
-rootUrlAPI = "https://api.musixmatch.com/ws/1.1/"
+# https://developer.musixmatch.com/ -> Using this one
 
-artistID = getRandomArtist()
+artistID, artistName = getRandomArtist()
 if (artistID == -1):
     exit(1)
 albumID = getRandomAlbum(artistID)
@@ -169,4 +179,17 @@ if (albumID == -1):
 trackID, trackName = getRandomSong(albumID)
 if (trackID == -1):
     exit(1)
-getLyrics(trackID)
+lyrics = getLyrics(trackID)
+
+if (len(lyrics) > 10):
+    tweetMessage = prepareTweetMessage(lyrics, trackName, artistName)
+    print("[*] Tweet structure:\n" + tweetMessage + "\n")
+
+    # Making first Tweet just to test the bot...
+    try:
+        api.update_status(tweetMessage)
+        print("[*] Tweet was posted! YEY")
+    except:
+        print("[!] Not able to tweet...")
+
+exit(0)
