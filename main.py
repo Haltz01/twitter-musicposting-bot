@@ -9,8 +9,6 @@ import random
 
 # logger = logging.getLogger()
 
-rootUrlAPI = "https://api.musixmatch.com/ws/1.1/"
-
 def getRandomArtist(): # gets random artist from artists_list.txt file and returns artist ID in the API + name of the selected artist
     print("\n======= getRandomArtist() =======")
     
@@ -30,7 +28,7 @@ def getRandomArtist(): # gets random artist from artists_list.txt file and retur
     response = requests.get(rootUrlAPI + artistSearchURL)
 
     if (response.status_code != 200):
-        print("[!] Something went wrong! Status code = " + response.status_code)
+        print("[!] Something went wrong! Status code = " + str(response.status_code))
         return (-1, "")
         
     response = response.json()
@@ -50,7 +48,7 @@ def getRandomAlbum(artistID): # gets a random album from the selected artist and
     response = requests.get(rootUrlAPI + albumSearchURL)
 
     if (response.status_code != 200):
-        print("[!] Something went wrong! Status code = " + response.status_code)
+        print("[!] Something went wrong! Status code = " + str(response.status_code))
         return -1
     
     response = response.json()
@@ -75,7 +73,7 @@ def getRandomSong(albumID): # gets a random song from an album (popular song is 
     response = requests.get(rootUrlAPI + albumTracksURL)
 
     if (response.status_code != 200):
-        print("[!] Something went wrong! Status code = " + response.status_code)
+        print("[!] Something went wrong! Status code = " + str(response.status_code))
         return (-1, "")
     
     response = response.json()
@@ -102,7 +100,7 @@ def getLyrics(trackID): # gets the lirycs of a song
     response = requests.get(rootUrlAPI + trackLyricsURL)
 
     if (response.status_code != 200):
-        print("[!] Something went wrong! Status code = " + response.status_code)
+        print("[!] Something went wrong! Status code = " + str(response.status_code))
         return -1
 
     response = response.json()
@@ -116,19 +114,71 @@ def getLyrics(trackID): # gets the lirycs of a song
     
     return lyricsSnippet
 
-def prepareTweetMessage(lyrics, trackName, artistName):
+def prepareTweetMessage(lyrics, trackName, artistName, videoLink):
     print("\n======= prepareTweetMessage() ======= ")
-    if (len(lyrics) <= 240):
-        return (lyrics + "\n\n[ " + trackName + ", " + artistName + " ]")
+    availableChars = 280 # max size of a tweet
+    # Tweet structure: lyrics + "\n\n[ " + trackName + ", " + artistName + " ]\n\n" + videoLink
+    availableChars -= 4 # <\n\n[ > = 4
+    availableChars -= len(trackName)
+    availableChars -= 2 # <, > = 2
+    availableChars -= len(artistName)
+    availableChars -= 4 # < ]\n\n> = 4
+    availableChars -= len(videoLink)
+
+    print("availableChars: ", availableChars)
+
+    if (len(lyrics) <= availableChars):
+        return (lyrics + "\n\n[ " + trackName + ", " + artistName + " ]\n\n" + videoLink)
     
-    lyrics = lyrics[:200]
+    lyrics = lyrics[:availableChars]
 
     lastCharIndex = len(lyrics) - 1 - lyrics[::-1].index('\n')
 
     lyrics = lyrics[:lastCharIndex] + "\n(...)"
 
-    return (lyrics + "\n\n[ " + trackName + ", " + artistName + " ]")
+    return (lyrics + "\n\n[ " + trackName + ", " + artistName + " ]\n\n" + videoLink)
 
+def getYoutubeVideo(songArtistTags):
+    # searching for the video ID
+    print("[*] Getting video ID for '" + songArtistTags +"'...")
+    getVideoIdURL = "search?part=snippet&maxResults=1&q=" + songArtistTags + "&key=" + GOOGLE_API_KEY
+
+    response = requests.get(ytAPIRootUrl + getVideoIdURL)
+
+    if (response.status_code != 200):
+        print("[!] Something went wrong! Status code = " + str(response.status_code))
+        return -1
+
+    response = response.json()
+    videoID = response["items"][0]["id"]["videoId"]
+
+    print("[*] OK - video ID <" + songArtistTags + ">: " + videoID)
+
+    print("[*] Getting video URL for '" + songArtistTags +"'...")
+    getVideoLinkURL = "videos?part=player&id=" + videoID + "&key=" + GOOGLE_API_KEY
+
+    response = requests.get(ytAPIRootUrl + getVideoLinkURL)
+
+    if (response.status_code != 200):
+        print("[!] Something went wrong! Status code = " + str(response.status_code))
+        return -1
+
+    response = response.json()
+    videoLink = response["items"][0]["player"]["embedHtml"]
+
+    linkInitIndex = videoLink.index("www")
+    videoLink = videoLink[linkInitIndex:]
+    linkEndIndex = videoLink.index("\"")
+    videoLink = videoLink[:linkEndIndex]
+
+    print("[*] OK - video YT link <" + songArtistTags + ">: " + videoLink)
+
+    return videoLink
+
+
+# Declaring API 'base' routes
+rootUrlAPI = "https://api.musixmatch.com/ws/1.1/"
+ytAPIRootUrl = "https://www.googleapis.com/youtube/v3/"
 
 # Getting environment variables
 load_dotenv(verbose=True)
@@ -138,6 +188,7 @@ BEARER_TOKEN = os.getenv("BEARER_TOKEN")
 ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 ACCESS_TOKEN_SECRET = os.getenv("ACCESS_TOKEN_SECRET")
 MUSIXMATCH_API_KEY = os.getenv("MUSIXMATCH_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 print("=== ENV. VARIABLES ===")
 print("API_KEY:", API_KEY)
@@ -146,6 +197,8 @@ print("BEARER_TOKEN: ", BEARER_TOKEN)
 print("ACCESS_TOKEN: ", ACCESS_TOKEN)
 print("ACCESS_TOKEN_SECRET: ", ACCESS_TOKEN_SECRET)
 print("MUSIXMATCH_API_KEY: ", MUSIXMATCH_API_KEY)
+print("GOOGLE_API_KEY: ", GOOGLE_API_KEY)
+print('\n')
 
 # Authenticating to Twitter
 print("[*] Authenticating to Twitter...")
@@ -163,12 +216,19 @@ except:
     print("[!] Error during authentication")
     exit(2)
 
-# Testing song APIs
+# Testing APIs...
 # https://www.last.fm/api/show/track.search
 # https://api.vagalume.com.br/
 # https://github.com/canarado/node-lyrics
 
 # https://developer.musixmatch.com/ -> Using this one
+# https://developer.musixmatch.com/documentation/best-practices
+# https://developer.musixmatch.com/documentation/checklist-before-going-live
+
+# Google APIs:
+# Youtube: https://developers.google.com/youtube/v3/getting-started
+#           |-> https://github.com/googleapis/google-api-python-client
+#           |-> https://developers.google.com/youtube/v3/docs/?apix=true
 
 artistID, artistName = getRandomArtist()
 if (artistID == -1):
@@ -180,14 +240,17 @@ trackID, trackName = getRandomSong(albumID)
 if (trackID == -1):
     exit(1)
 lyrics = getLyrics(trackID)
+videoLink = getYoutubeVideo(artistName + " " + trackName)
+if (videoLink == -1):
+    exit(1)
 
 if (len(lyrics) > 10):
-    tweetMessage = prepareTweetMessage(lyrics, trackName, artistName)
+    tweetMessage = prepareTweetMessage(lyrics, trackName, artistName, videoLink)
     print("[*] Tweet structure:\n" + tweetMessage + "\n")
 
     # Making first Tweet just to test the bot...
     try:
-        api.update_status(tweetMessage)
+        # api.update_status(tweetMessage)
         print("[*] Tweet was posted! YEY")
     except:
         print("[!] Not able to tweet...")
