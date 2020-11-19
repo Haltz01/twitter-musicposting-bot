@@ -95,7 +95,6 @@ def getLyrics(trackID): # gets the lirycs of a song
     print("\n======= getLyrics() =======")
 
     trackLyricsURL = "track.lyrics.get?track_id=" + str(trackID) + "&apikey=" + MUSIXMATCH_API_KEY
-    # trackLyricsURL = "track.lyrics.get?track_id=203501441&apikey=d267823ae65499177e3c4e805c2fbab7"
 
     response = requests.get(rootUrlAPI + trackLyricsURL)
 
@@ -215,20 +214,6 @@ try:
 except:
     print("[!] Error during authentication")
     exit(2)
-
-# Testing APIs...
-# https://www.last.fm/api/show/track.search
-# https://api.vagalume.com.br/
-# https://github.com/canarado/node-lyrics
-
-# https://developer.musixmatch.com/ -> Using this one
-# https://developer.musixmatch.com/documentation/best-practices
-# https://developer.musixmatch.com/documentation/checklist-before-going-live
-
-# Google APIs:
-# Youtube: https://developers.google.com/youtube/v3/getting-started
-#           |-> https://github.com/googleapis/google-api-python-client
-#           |-> https://developers.google.com/youtube/v3/docs/?apix=true
 
 artistID, artistName = getRandomArtist()
 if (artistID == -1):
